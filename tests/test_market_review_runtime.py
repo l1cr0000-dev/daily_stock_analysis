@@ -87,6 +87,26 @@ class TestMarketReviewRuntimeCompatibility(unittest.TestCase):
         self.assertIs(runtime_analyzer, analyzer)
         self.assertIsNone(runtime_search)
 
+    def test_build_market_review_runtime_supports_explicit_litellm_model_only(self) -> None:
+        config = self._base_config()
+        config.litellm_model = "openai/gpt-5.5"
+
+        notifier = MagicMock()
+        analyzer = MagicMock()
+        analyzer.is_available.return_value = True
+
+        with patch("src.analyzer.GeminiAnalyzer", return_value=analyzer) as analyzer_cls, \
+             patch("src.notification.NotificationService", return_value=notifier) as notifier_cls, \
+             patch("src.search_service.SearchService") as search_cls:
+            runtime_notifier, runtime_analyzer, runtime_search = build_market_review_runtime(config)
+
+        notifier_cls.assert_called_once_with(source_message=None)
+        analyzer_cls.assert_called_once_with(config=config)
+        search_cls.assert_not_called()
+        self.assertIs(runtime_notifier, notifier)
+        self.assertIs(runtime_analyzer, analyzer)
+        self.assertIsNone(runtime_search)
+
     def test_has_configured_llm_runtime_returns_false_without_any_model_source(self) -> None:
         config = self._base_config()
         self.assertFalse(has_configured_llm_runtime(config))
