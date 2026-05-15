@@ -36,7 +36,7 @@ For English contributors: please fill in English. All fields marked (EN) accept 
 示例 / Example:
 
 - #1309 为 umbrella issue 分解场景：`Refs #1309`
-- 仅在 PR 直接闭环 #1309 全部验收且无需后续拆分时才使用：`Fixes #1309`
+- #1309 为 umbrella issue 拆分场景（含第 6 轮）：`Refs #1309`
 
 > 建议：若你的 PR 是第 N 轮分解任务（如本仓库的 #1309），请务必避免 `Fixes`，固定使用 `Refs`，避免自动关闭总 issue。
 
