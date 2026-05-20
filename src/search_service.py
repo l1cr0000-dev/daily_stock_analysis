@@ -2617,10 +2617,11 @@ class SearchService:
             return False
 
         if cls._US_STOCK_RE.match(term) and term.upper() == term and not term.startswith("$"):
+            ticker_pattern = f"(?:{re.escape(term)}|{re.escape(term.lower())})"
             pattern = (
                 r"(?<![A-Za-z0-9$:.])"
-                + re.escape(term)
-                + r"(?=$|[^A-Za-z0-9.]|\.(?:US|O|N|NYSE|NASDAQ|AMEX)\b)"
+                + ticker_pattern
+                + r"(?=$|[^A-Za-z0-9.]|\.(?:US|us|O|o|N|n|NYSE|nyse|NASDAQ|nasdaq|AMEX|amex)\b)"
             )
             return bool(re.search(pattern, text))
 
@@ -2867,10 +2868,10 @@ class SearchService:
             and candidate_stats["preferred_direct_count"] != best_stats["preferred_direct_count"]
         ):
             return candidate_stats["preferred_direct_count"] > best_stats["preferred_direct_count"]
-        if candidate_stats["max_score"] != best_stats["max_score"]:
-            return candidate_stats["max_score"] > best_stats["max_score"]
         if prefer_chinese and candidate_stats["preferred_count"] != best_stats["preferred_count"]:
             return candidate_stats["preferred_count"] > best_stats["preferred_count"]
+        if candidate_stats["max_score"] != best_stats["max_score"]:
+            return candidate_stats["max_score"] > best_stats["max_score"]
         return candidate_stats["result_count"] > best_stats["result_count"]
 
     @staticmethod

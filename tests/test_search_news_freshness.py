@@ -296,6 +296,56 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
         provider.search.assert_called_once()
 
+    def test_a_share_chinese_sector_provider_beats_higher_scored_english_sector(self) -> None:
+        """When no direct hit exists, Chinese-preferred flows should compare language before score."""
+        fresh = datetime.now().date().isoformat()
+        service = SearchService(
+            bocha_keys=["dummy_key"],
+            searxng_public_instances_enabled=False,
+            news_max_age_days=3,
+            news_strategy_profile="short",
+        )
+
+        p1 = SimpleNamespace(
+            is_available=True,
+            name="EnglishSector",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result(
+                            "Baijiu industry quarterly results improve",
+                            fresh,
+                            snippet="Sector peers report better market share.",
+                            source="sec.gov",
+                        )
+                    ]
+                )
+            ),
+        )
+        p2 = SimpleNamespace(
+            is_available=True,
+            name="ChineseSector",
+            search=MagicMock(
+                return_value=_response(
+                    [
+                        _result(
+                            "白酒板块资金回暖",
+                            fresh,
+                            snippet="消费行业反弹。",
+                        )
+                    ]
+                )
+            ),
+        )
+        service._providers = [p1, p2]
+
+        resp = service.search_stock_news("600519", "贵州茅台", max_results=1)
+
+        self.assertEqual([r.title for r in resp.results], ["白酒板块资金回暖"])
+        self.assertEqual(resp.results[0].relevance_category, "sector_related_news")
+        p1.search.assert_called_once()
+        p2.search.assert_called_once()
+
     def test_search_stock_news_keeps_english_provider_order_for_us_stock(self) -> None:
         """English stock searches should keep the first successful provider result."""
         fresh = datetime.now().date().isoformat()
@@ -514,6 +564,26 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
         self.assertEqual(resp.results[0].relevance_category, "direct_company_news")
         self.assertEqual(resp.results[1].relevance_category, "sector_related_news")
 
+    def test_ambiguous_company_name_with_generic_event_terms_stays_background(self) -> None:
+        """Generic event words should not make ambiguous company names direct without ticker."""
+        scored = SearchService._score_news_relevance(
+            _result(
+                "Apple stock results harvest",
+                datetime.now().date().isoformat(),
+                snippet="Agriculture market report on orchards.",
+            ),
+            stock_code="AAPL",
+            stock_name="Apple",
+        )
+
+        self.assertNotEqual(scored.relevance_category, "direct_company_news")
+        self.assertFalse(
+            any(
+                reason.startswith(("标题命中股票代码", "摘要命中股票代码", "链接命中股票代码"))
+                for reason in (scored.relevance_reasons or [])
+            )
+        )
+
     def test_suffixed_stock_codes_keep_canonical_identity_terms(self) -> None:
         """Suffixed market codes should still emit canonical direct-match variants."""
         cases = (
@@ -554,11 +624,32 @@ class SearchNewsFreshnessTestCase(unittest.TestCase):
             SearchService._contains_stock_code_identity_term("AAPL.US shares rally", "AAPL")
         )
         self.assertTrue(
+            SearchService._contains_stock_code_identity_term("aapl.us shares rally", "AAPL")
+        )
+        self.assertTrue(
+            SearchService._contains_stock_code_identity_term("aapl shares rally", "AAPL")
+        )
+        self.assertTrue(
             SearchService._contains_stock_code_identity_term("TSLA.O gains after results", "TSLA")
+        )
+        self.assertTrue(
+            SearchService._contains_stock_code_identity_term("tsla.o gains after results", "TSLA")
         )
         self.assertFalse(
             SearchService._contains_stock_code_identity_term("AAPL.COM launches update", "AAPL")
         )
+
+        scored = SearchService._score_news_relevance(
+            _result(
+                "msft.us earnings beat expectations",
+                datetime.now().date().isoformat(),
+                snippet="Quarterly revenue guidance improved.",
+            ),
+            stock_code="MSFT",
+            stock_name="Microsoft",
+        )
+        self.assertEqual(scored.relevance_category, "direct_company_news")
+        self.assertIn("股票代码", "；".join(scored.relevance_reasons or []))
 
     def test_one_letter_us_ticker_does_not_match_common_article_words(self) -> None:
         """Bare one-letter US tickers should not make ordinary words direct hits."""
