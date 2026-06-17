@@ -127,6 +127,7 @@ class IntelligenceRepository:
         market: Optional[str] = None,
         query: Optional[str] = None,
         days: Optional[int] = None,
+        published_days: Optional[int] = None,
         page: int = 1,
         page_size: int = 50,
     ) -> Tuple[List[IntelligenceItem], int]:
@@ -142,6 +143,9 @@ class IntelligenceRepository:
             conditions.append(or_(IntelligenceItem.title.like(pattern), IntelligenceItem.summary.like(pattern)))
         if days is not None:
             conditions.append(IntelligenceItem.fetched_at >= datetime.now() - timedelta(days=max(1, int(days))))
+        if published_days is not None:
+            published_cutoff = datetime.now() - timedelta(days=max(1, int(published_days)))
+            conditions.append(IntelligenceItem.published_at >= published_cutoff)
         where_clause = and_(*conditions) if conditions else True
         safe_page = max(1, int(page))
         safe_size = max(1, min(int(page_size), 100))

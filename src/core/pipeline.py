@@ -2263,7 +2263,7 @@ class StockAnalysisPipeline:
                 {"scope_type": "symbol", "scope_value": code, "market": market},
                 {"scope_type": "market", "market": market},
             ):
-                payload = service.list_items(days=days, page=1, page_size=limit, **filters)
+                payload = service.list_items(published_days=days, page=1, page_size=limit, **filters)
                 for item in payload.get("items", []):
                     if not isinstance(item, dict):
                         continue
@@ -2283,7 +2283,7 @@ class StockAnalysisPipeline:
                 title = str(item.get("title") or "未命名资讯").strip()
                 summary = str(item.get("summary") or "").strip()
                 source = str(item.get("source") or item.get("source_name") or "local-intel").strip()
-                published = str(item.get("published_at") or item.get("fetched_at") or "").strip()
+                published = str(item.get("published_at") or "").strip()
                 url = str(item.get("url") or "").strip()
                 meta = " / ".join(part for part in (source, published) if part)
                 lines.append(f"{idx}. {title}" + (f"（{meta}）" if meta else ""))

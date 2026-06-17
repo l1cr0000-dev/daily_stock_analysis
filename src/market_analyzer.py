@@ -1490,7 +1490,7 @@ Market conditions can change quickly. The data above is for reference only and d
             payload = service.list_items(
                 scope_type="market",
                 market=self.region,
-                days=max(1, int(getattr(self.config, "news_max_age_days", 3) or 3)),
+                published_days=max(1, int(getattr(self.config, "news_max_age_days", 3) or 3)),
                 page=1,
                 page_size=6,
             )
@@ -1505,7 +1505,7 @@ Market conditions can change quickly. The data above is for reference only and d
                     "title": item.get("title") or "未命名资讯",
                     "snippet": item.get("summary") or "",
                     "source": item.get("source") or item.get("source_name") or "local-intel",
-                    "published_date": item.get("published_at") or item.get("fetched_at") or "",
+                    "published_date": item.get("published_at") or "",
                     "url": "" if url.startswith("no-url:intel:") else url,
                 })
         except Exception as exc:

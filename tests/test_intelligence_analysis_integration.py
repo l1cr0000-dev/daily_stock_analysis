@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.config import Config, get_config
 from src.core.pipeline import StockAnalysisPipeline
@@ -116,6 +116,86 @@ class PersistedIntelligenceAnalysisIntegrationTestCase(unittest.TestCase):
         )
         self.assertEqual(payload["news"][0]["url"], "https://news.example.com/market")
         self.assertGreaterEqual(len(payload["news"]), 1)
+
+    def test_analysis_evidence_excludes_missing_or_stale_publish_time(self) -> None:
+        repo = IntelligenceRepository()
+        now = datetime.now()
+        old_time = now - timedelta(days=30)
+        repo.upsert_items([
+            {
+                "source_name": "symbol-feed",
+                "source_type": "rss",
+                "title": "Stale symbol item fetched today",
+                "summary": "Old publication date should not be prompt evidence.",
+                "url": "https://news.example.com/stale-symbol",
+                "source": "symbol-feed",
+                "published_at": old_time,
+                "fetched_at": now,
+                "scope_type": "symbol",
+                "scope_value": "600519",
+                "market": "cn",
+            },
+            {
+                "source_name": "symbol-feed",
+                "source_type": "rss",
+                "title": "Undated symbol item fetched today",
+                "summary": "Missing publication date should not be prompt evidence.",
+                "url": "https://news.example.com/undated-symbol",
+                "source": "symbol-feed",
+                "published_at": None,
+                "fetched_at": now,
+                "scope_type": "symbol",
+                "scope_value": "600519",
+                "market": "cn",
+            },
+            {
+                "source_name": "market-feed",
+                "source_type": "rss",
+                "title": "Stale market item fetched today",
+                "summary": "Old market publication date should not be prompt evidence.",
+                "url": "https://news.example.com/stale-market",
+                "source": "market-feed",
+                "published_at": old_time,
+                "fetched_at": now,
+                "scope_type": "market",
+                "scope_value": None,
+                "market": "cn",
+            },
+            {
+                "source_name": "market-feed",
+                "source_type": "rss",
+                "title": "Undated market item fetched today",
+                "summary": "Missing market publication date should not be prompt evidence.",
+                "url": "https://news.example.com/undated-market",
+                "source": "market-feed",
+                "published_at": None,
+                "fetched_at": now,
+                "scope_type": "market",
+                "scope_value": None,
+                "market": "cn",
+            },
+        ])
+
+        pipeline = StockAnalysisPipeline.__new__(StockAnalysisPipeline)
+        pipeline.config = self.config
+        context = pipeline._load_persisted_intelligence_context(
+            code="600519",
+            stock_name="贵州茅台",
+            market="cn",
+        )
+        assert context is not None
+        self.assertIn("Company wins major AI order", context)
+        self.assertNotIn("Stale symbol item fetched today", context)
+        self.assertNotIn("Undated symbol item fetched today", context)
+        self.assertNotIn("Stale market item fetched today", context)
+        self.assertNotIn("Undated market item fetched today", context)
+
+        analyzer = MarketAnalyzer(config=self.config, region="cn")
+        merged = analyzer._merge_persisted_market_intelligence([])
+        titles = {item.get("title") for item in merged}
+        self.assertIn("Policy support lifts market sentiment", titles)
+        self.assertNotIn("Stale market item fetched today", titles)
+        self.assertNotIn("Undated market item fetched today", titles)
 
 
 if __name__ == "__main__":
