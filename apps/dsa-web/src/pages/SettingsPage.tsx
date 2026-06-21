@@ -327,8 +327,15 @@ const SchedulerSettingsCard: React.FC<SchedulerSettingsCardProps> = ({
   }, [hasSchedulerSettings, refreshSchedulerStatus, statusRefreshToken]);
 
   useEffect(() => {
-    setScheduleEnabledOverride(null);
-  }, [scheduleEnabledItem?.value, statusRefreshToken]);
+    const isRuntimeDerived = isEnabledConfigValue(scheduleEnabledItem?.value) === status?.enabled;
+    if (!status) {
+      return;
+    }
+
+    if (scheduleEnabledOverride === null && isRuntimeDerived) {
+      setScheduleEnabledOverride(null);
+    }
+  }, [scheduleEnabledItem?.value, scheduleEnabledOverride, statusRefreshToken]);
 
   useEffect(() => {
     if (!onSchedulerStateChange) {
@@ -392,18 +399,19 @@ const SchedulerSettingsCard: React.FC<SchedulerSettingsCardProps> = ({
       <div data-testid="scheduler-settings-card" className="space-y-4">
         <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]">
           <div className="space-y-4 rounded-2xl border settings-border bg-background/35 px-4 py-4">
-            <label className="flex items-start gap-3">
-              <input
-                type="checkbox"
-                className="mt-1 h-4 w-4 rounded border-border text-cyan focus:ring-cyan/20"
-                checked={displayedScheduleEnabled}
-                data-testid="scheduler-enabled-checkbox"
-                disabled={disabled || !scheduleEnabledItem?.schema?.isEditable}
-                onChange={(event) => {
-                  setScheduleEnabledOverride(event.target.checked);
-                  onChange('SCHEDULE_ENABLED', event.target.checked ? 'true' : 'false');
-                }}
-              />
+                <label className="flex items-start gap-3">
+                  <input
+                    type="checkbox"
+                    className="mt-1 h-4 w-4 rounded border-border text-cyan focus:ring-cyan/20"
+                    checked={displayedScheduleEnabled}
+                    data-testid="scheduler-enabled-checkbox"
+                    disabled={disabled || !scheduleEnabledItem?.schema?.isEditable}
+                    onChange={(event) => {
+                      const nextEnabled = Boolean(event.target.checked);
+                      setScheduleEnabledOverride(nextEnabled);
+                      onChange('SCHEDULE_ENABLED', nextEnabled ? 'true' : 'false');
+                    }}
+                  />
               <span>
                 <span className="block text-sm font-semibold text-foreground">{t('settings.schedulerEnable')}</span>
                 <span className="block text-xs leading-6 text-muted-text">{t('settings.schedulerEnableDescription')}</span>

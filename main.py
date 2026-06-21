@@ -985,6 +985,25 @@ def run_scheduled_analysis(
     return run_full_analysis(config, args, stock_codes, raise_errors=True)
 
 
+def _run_analysis_with_runtime_scheduler_lock(
+    config: Config,
+    args: argparse.Namespace,
+    stock_codes: Optional[List[str]] = None,
+) -> None:
+    from src.services.runtime_scheduler import run_with_global_analysis_lock
+
+    # Keep startup/triggered analysis in sync with API runtime scheduler and
+    # run-now entrypoint. Blocking is expected here because startup paths should
+    # wait for an in-flight job before returning a response.
+    run_with_global_analysis_lock(
+        task_runner=run_full_analysis,
+        config=config,
+        args=args,
+        stock_codes=stock_codes,
+        blocking=True,
+    )
+
+
 def start_api_server(host: str, port: int, config: Config) -> None:
     """
     在后台线程启动 FastAPI 服务
@@ -1007,15 +1026,33 @@ def start_api_server(host: str, port: int, config: Config) -> None:
         probe.close()
 
     level_name = (config.log_level or "INFO").lower()
-    uvicorn_config = uvicorn.Config(
-        "api.app:app",
-        host=host,
-        port=port,
-        log_level=level_name,
-        log_config=None,
-    )
+    use_config_signal_handlers = True
+    uvicorn_kwargs = {
+        "host": host,
+        "port": port,
+        "log_level": level_name,
+        "log_config": None,
+    }
+    try:
+        uvicorn_config = uvicorn.Config(
+            "api.app:app",
+            install_signal_handlers=False,
+            **uvicorn_kwargs,
+        )
+    except TypeError:
+        # Older uvicorn versions do not accept install_signal_handlers in
+        # Config; fall back and only disable signal handling via Server attribute
+        # when it's a boolean flag.
+        use_config_signal_handlers = False
+        uvicorn_config = uvicorn.Config(
+            "api.app:app",
+            **uvicorn_kwargs,
+        )
     uvicorn_server = uvicorn.Server(config=uvicorn_config)
-    uvicorn_server.install_signal_handlers = False
+    if not use_config_signal_handlers:
+        install_signal_handlers = getattr(uvicorn_server, "install_signal_handlers", None)
+        if isinstance(install_signal_handlers, bool):
+            uvicorn_server.install_signal_handlers = False
 
     startup_error: list[BaseException] = []
 
@@ -1445,7 +1482,7 @@ def main() -> int:
 
         # 模式3: 正常单次运行
         if config.run_immediately:
-            run_full_analysis(config, args, stock_codes)
+            _run_analysis_with_runtime_scheduler_lock(config, args, stock_codes)
         else:
             logger.info("配置为不立即运行分析 (RUN_IMMEDIATELY=false)")
 

@@ -20,6 +20,7 @@ RUNTIME_SCHEDULER_FORCE_ENABLED_ENV = "DSA_RUNTIME_SCHEDULER_FORCE_ENABLED"
 RUNTIME_SCHEDULER_RUN_IMMEDIATELY_ENV = "DSA_RUNTIME_SCHEDULER_RUN_IMMEDIATELY"
 RUNTIME_SCHEDULER_SUPPRESS_START_ENV = "DSA_RUNTIME_SCHEDULER_SUPPRESS_START"
 RUNTIME_SCHEDULER_ARGS_ENV = "DSA_RUNTIME_SCHEDULER_ARGS"
+_RUNTIME_ANALYSIS_LOCK = threading.Lock()
 SCHEDULE_ARGS_OVERRIDE_KEYS = {
     "no_notify",
     "no_market_review",
@@ -29,6 +30,24 @@ SCHEDULE_ARGS_OVERRIDE_KEYS = {
     "no_context_snapshot",
     "workers",
 }
+
+
+def run_with_global_analysis_lock(
+    task_runner: Callable[[Config, Any, Optional[List[str]]], Any],
+    config: Config,
+    args: Any,
+    stock_codes: Optional[List[str]] = None,
+    *,
+    blocking: bool = True,
+) -> bool:
+    """Execute a task while holding the shared runtime analysis lock."""
+    if not _RUNTIME_ANALYSIS_LOCK.acquire(blocking=blocking):
+        return False
+    try:
+        task_runner(config, args, stock_codes)
+    finally:
+        _RUNTIME_ANALYSIS_LOCK.release()
+    return True
 
 
 def _agent_event_monitor_interval_seconds(config: Config) -> int:
@@ -112,7 +131,7 @@ class RuntimeSchedulerService:
         self._background_task_cache: Dict[str, Dict[str, Any]] = {}
         self._background_task_registered_names: Set[str] = set()
         self._lock = threading.RLock()
-        self._run_lock = threading.Lock()
+        self._run_lock = _RUNTIME_ANALYSIS_LOCK
         self._scheduler: Optional[Scheduler] = None
         self._thread: Optional[threading.Thread] = None
         self._enabled = False
@@ -151,7 +170,7 @@ class RuntimeSchedulerService:
         self._last_skip_reason = "analysis_already_running"
         logger.warning("Runtime scheduler skipped run: analysis already running")
 
-    def _run_analysis_locked(self) -> None:
+    def _run_analysis_locked(self, stock_codes: Optional[List[str]]) -> None:
         try:
             config = self._reload_config()
             runner = self._task_runner
@@ -160,7 +179,7 @@ class RuntimeSchedulerService:
 
                 runner = run_scheduled_analysis
             self._last_run_at = datetime.now().isoformat()
-            result = runner(config, self._make_schedule_args(), None)
+            result = runner(config, self._make_schedule_args(), stock_codes)
             if result is False:
                 raise RuntimeError("runtime scheduled analysis reported failure")
             self._last_success_at = datetime.now().isoformat()
@@ -169,14 +188,15 @@ class RuntimeSchedulerService:
             self._last_error = str(exc)
             logger.exception("Runtime scheduled analysis failed: %s", exc)
 
-    def _run_analysis_once(self) -> None:
+    def _run_analysis_once(self, stock_codes: Optional[List[str]] = None) -> bool:
         if not self._run_lock.acquire(blocking=False):
             self._record_analysis_busy_skip()
-            return
+            return False
         try:
-            self._run_analysis_locked()
+            self._run_analysis_locked(stock_codes)
         finally:
             self._run_lock.release()
+        return True
 
     def _current_times(self) -> List[str]:
         config = self._config_provider()

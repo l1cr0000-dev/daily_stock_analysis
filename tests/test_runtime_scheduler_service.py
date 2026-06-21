@@ -182,6 +182,30 @@ class RuntimeSchedulerServiceTestCase(unittest.TestCase):
         self.assertEqual(status["last_skip_reason"], "analysis_already_running")
         self.assertIsNotNone(status["last_skipped_at"])
 
+    def test_run_now_uses_shared_lock_across_service_instances(self) -> None:
+        config = SimpleNamespace(
+            schedule_enabled=True,
+            schedule_time="18:00",
+            schedule_times=["18:00"],
+        )
+        primary_service = RuntimeSchedulerService(config_provider=lambda: config)
+        secondary_service = RuntimeSchedulerService(config_provider=lambda: config)
+
+        self.assertIs(primary_service._run_lock, secondary_service._run_lock)
+
+        primary_service._run_lock.acquire()
+        try:
+            result = secondary_service.run_now()
+        finally:
+            primary_service._run_lock.release()
+
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["running"], True)
+        self.assertEqual(result["reason"], "analysis_already_running")
+        status = secondary_service.status()
+        self.assertEqual(status["last_skip_reason"], "analysis_already_running")
+        self.assertIsNotNone(status["last_skipped_at"])
+
     def test_run_now_endpoint_returns_conflict_when_scheduler_is_busy(self) -> None:
         from api.v1.endpoints.system_config import run_scheduler_now
 

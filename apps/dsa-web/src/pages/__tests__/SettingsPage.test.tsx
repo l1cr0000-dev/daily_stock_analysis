@@ -1341,6 +1341,68 @@ describe('SettingsPage', () => {
     await waitFor(() => expect(enabledCheckbox).not.toBeChecked());
   });
 
+  it('keeps local scheduler toggle edits when runtime and saved states are initially consistent', async () => {
+    const configState = buildSystemConfigState();
+    useSystemConfigMock.mockReturnValue(buildSystemConfigState({
+      activeCategory: 'system',
+      itemsByCategory: {
+        ...configState.itemsByCategory,
+        system: [
+          ...configState.itemsByCategory.system,
+          {
+            key: 'SCHEDULE_ENABLED',
+            value: 'true',
+            rawValueExists: true,
+            isMasked: false,
+            schema: {
+              key: 'SCHEDULE_ENABLED',
+              category: 'system',
+              dataType: 'boolean',
+              uiControl: 'switch',
+              isSensitive: false,
+              isRequired: false,
+              isEditable: true,
+              options: [],
+              validation: {},
+              displayOrder: 8,
+            },
+          },
+          {
+            key: 'SCHEDULE_TIMES',
+            value: '18:00',
+            rawValueExists: true,
+            isMasked: false,
+            schema: {
+              key: 'SCHEDULE_TIMES',
+              category: 'system',
+              dataType: 'string',
+              uiControl: 'text',
+              isSensitive: false,
+              isRequired: false,
+              isEditable: true,
+              options: [],
+              validation: {},
+              displayOrder: 11,
+            },
+          },
+        ],
+      },
+    }));
+    render(<SettingsPage />);
+
+    const enabledCheckbox = await screen.findByTestId('scheduler-enabled-checkbox');
+    expect(enabledCheckbox).toBeChecked();
+
+    fireEvent.click(enabledCheckbox);
+
+    expect(setDraftValue).toHaveBeenCalledWith('SCHEDULE_ENABLED', 'false');
+    await waitFor(() => expect(enabledCheckbox).not.toBeChecked());
+
+    const refreshButton = screen.getByTestId('scheduler-refresh-status-button');
+    fireEvent.click(refreshButton);
+    await waitFor(() => expect(enabledCheckbox).not.toBeChecked());
+  });
+
   it('can reconcile runtime scheduler state when runtime is enabled but saved value is disabled', async () => {
     save.mockResolvedValue({ success: true });
     getChangedItems.mockReturnValue([]);
